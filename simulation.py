@@ -152,21 +152,21 @@ class Simulation:
         for n in range(n_parts):
             vel_array[n, 0, :] = particles[n].velocity
         
+
         for n in range(n_times):
             if n == 0:
-                t_old = times[n]
+                part_locs[:, :, n] = part_locs_init
                 continue
 
-            delta_t = times[n] - t_old
-            vel_array[:,n,:] = vel_array[:, n-1, :]
-
-            new_loc = loc_array[:, n-1, :] + vel_array[:,n,:] * delta_t
-            # test if in bounds of box
+            delta_t = times[n] - times[n - 1]
+            new_part_loc = part_locs[:, :, n-1] + part_vel * delta_t
+            for n in range(n_dims):
+                new_part_loc[new_part_loc[:,n] > box_size[n], n] -= box_size[n]
+                new_part_loc[new_part_loc[:,n] < 0, n] += box_size[n]
             
+            part_locs[:, :, n] = new_part_loc
 
-            loc_array[:, n, :] = 
 
-            t_old = times[n]
 
 
         self.run_flag = True
