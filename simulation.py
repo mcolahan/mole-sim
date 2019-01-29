@@ -130,9 +130,7 @@ class Simulation:
         plt.show()
 
     def calculate(self):
-        time_step = self.time_step
-        start_time = self.time_start
-        end_time = self.time_end
+
         times = self.times
         n_times = len(times)
 
@@ -144,21 +142,22 @@ class Simulation:
         box_dims = self.box.size
         box_dims = np.array([np.zeros(n_dims), box_dims])
 
-        loc_array = np.zeros((n_parts, n_times, n_dims))
+        part_locs = np.zeros((n_parts, n_times, n_dims))
         for n in range(n_parts):
-            loc_array[n, 0, :] = particles[n].location
+            part_locs[n, 0, :] = particles[n].location
 
-        vel_array = np.zeros((n_parts, n_times, n_dims))
+        part_vel = np.zeros((n_parts, n_times, n_dims))
         for n in range(n_parts):
-            vel_array[n, 0, :] = particles[n].velocity
+            part_vel[n, 0, :] = particles[n].velocity
         
-
         for n in range(n_times):
             if n == 0:
-                part_locs[:, :, n] = part_locs_init
                 continue
 
             delta_t = times[n] - times[n - 1]
+
+            # TODO: Update Velocity
+
             new_part_loc = part_locs[:, :, n-1] + part_vel * delta_t
             for n in range(n_dims):
                 new_part_loc[new_part_loc[:,n] > box_size[n], n] -= box_size[n]
@@ -167,17 +166,12 @@ class Simulation:
             part_locs[:, :, n] = new_part_loc
 
 
-
-
         self.run_flag = True
 
         for n in range(n_parts):
-            particles[n].velocity = vel_array[n, :, :]
-            particles[n].location = loc_array[n, :, :]
+            particles[n].velocity = part_vel[n, :, :]
+            particles[n].location = part_loc[n, :, :]
 
-
-        # results_dict = {'locations': loc_array, 'velocities': vel_array}
-        # return results_dict
 
 
 class Box:
@@ -233,8 +227,11 @@ if __name__ == "__main__":
     part_locs = sim.create_random_spherical_particle_loc_in_box(n_particles, part_diam=part_diam)
     
 
-    # mean_velocity = 0.5
-    # velocities = np.random.normal(loc=mean_velocity, scale=1, size=(n_particles, n_dims))
+    mean_velocity = 0.5
+    velocities = np.random.normal(loc=mean_velocity, scale=1, size=n_particles)
+    #how much of the velocity will be in the x, y, (z) direction?
+    dim_weight_of_vel = np.random.rand(n_parts, )
+
 
     # particles = [HardSphere(location=part_locs[n,:], initial_velocity=velocities[n,:], diameter=1) for n in range(n_particles)]
     # sim.particles = particles

@@ -66,3 +66,17 @@ plt.show()
 # new_part_loc
 
 #%%
+avg_vel = 1
+n_dims = 2
+dist = 0.3
+n_parts = 10
+vel_mag = np.random.normal(avg_vel, dist, n_parts)
+velocities = np.zeros(n_parts, n_dims)
+
+dist = np.random.rand(n_parts, n_dims-1)
+if n_dims == 3:
+    
+
+    
+
+#%%
