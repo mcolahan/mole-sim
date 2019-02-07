@@ -1,0 +1,9 @@
+name: MolSimEnv
+channels:
+  - conda-forge
+dependencies:
+  - numpy
+  - matplotlib
+  - pandas
+  - scipy
+  - jupyter
