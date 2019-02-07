@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import matplotlib.patches as patches
+from mpl_toolkits import mplot3d
 
 class Simulation:
 
@@ -90,19 +91,28 @@ class Simulation:
         
         
 
-    def plot_initial(self):
+    def plot_initial_2d(self):
         if particles is None:
             return None
-        plt.figure()
-        plt.subplot(111)
-        
+
         x = [part.location[0] for part in self.particles]
         y = [part.location[1] for part in self.particles]
         sizes = [part.diameter for part in self.particles]
-        
-        #TODO: make the marker size respective to the particle
-        plt.scatter(x, y)
+
+        plt.figure()
+        ax = plt.subplot(111, aspect='equal')
+        for n in range(n_particles):
+            circle = patches.Circle(xy=part_locs[n, :], radius=part_diam/2)
+            ax.add_artist(circle)
+
+        ax.set_xlim([0, box_size[0]])
+        ax.set_ylim([0, box_size[1]])
+
+
         plt.show()
+
+    def plot_initial_3d(self):
+
 
     def animate_results(self):
 
@@ -216,38 +226,18 @@ class HardSphere(AbstractParticle):
 if __name__ == "__main__":
 
     sim = Simulation()
-    n_dims = 2
-    box_size = (10,10)
+    n_dims = 3
+    box_size = (10, 10, 10)
     sim.box = Box(ndims=n_dims, size=box_size)
     sim.n_dims = n_dims
 
 
-    n_particles = 20
+    n_particles = 40
     part_diam = 0.5
-    part_locs = sim.create_random_spherical_particle_loc_in_box(n_particles, part_diam=part_diam)
-    
-
-    mean_velocity = 0.5
-    velocities = np.random.normal(loc=mean_velocity, scale=1, size=n_particles)
-    #how much of the velocity will be in the x, y, (z) direction?
-    dim_weight_of_vel = np.random.rand(n_parts, )
-
-
-    # particles = [HardSphere(location=part_locs[n,:], initial_velocity=velocities[n,:], diameter=1) for n in range(n_particles)]
-    # sim.particles = particles
-
-    # sim.set_time(0, 10, 0.5)
-    # sim.calculate()
+    sim.init_part_locs = sim.create_random_spherical_particle_loc_in_box(n_particles, part_diam=part_diam)
 
     # sim.plot_initial()
-    plt.figure()
-    ax = plt.subplot(111, aspect='equal')
-    for n in range(n_particles):
-        circle = patches.Circle(xy=part_locs[n, :], radius=part_diam/2)
-        ax.add_artist(circle)
-    ax.set_xlim([0, box_size[0]])
-    ax.set_ylim([0, box_size[1]])
-    plt.show()
+    
 
     
 
