@@ -2,3 +2,4 @@
 .dropbox
 .vscode/
 .vscode/settings.json
+*.cmd
