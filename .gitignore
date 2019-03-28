@@ -3,3 +3,6 @@
 .vscode/
 .vscode/settings.json
 *.cmd
+*.csv
+*.png
+settings.json
