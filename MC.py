@@ -1,7 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import time
+
+# ======================================
+# Simulation
+# =====================================
 
 
+# if using the code in a Jupyter notebook, then uncomment the widget code to follow the progress of the simulation
+# import ipywidgets as widgets
+# from IPython.display import display
+
+# Simulation parameters
 beta = 1  # beta = 1 / (k_b * T)
 T = 1 / beta
 P = 3
@@ -11,36 +21,60 @@ epsilon = 1,
 sigma = 1 
 mass = 1
 density = 1
-
 min_dist = 0.8
 dist_cutoff = 3
 
+# box settings
+n_dims = 3
+box_size = np.array([8,8,8])    # cubic box, but explicitly setting each dimension for generality 
+min_size = np.array([6.5,6.5,6.5])   # absolute min of 2 * distance cutoff
+V = np.product(box_size)
+n_parts = int(density * np.prod(box_size))
+
 # MC algorithm params:
-delta_rmax = 0.5
-delta_Vmax = 0.02
-delta_rmax_min = 0.1
+delta_rmax = 0.8
+delta_Vmax = 0.1
+delta_rmax_min = 0.2
 delta_Vmax_min = 0.005
-target_acceptance_range = (0.3, 0.5)
+target_acceptance_range = (0.4, 0.5)
 
 
-step_count = 20  # number steps between acceptance rate check
 
 # what to change each step:
-n_steps = 10000
-steps_def = [(0,n_steps,'both')]
+n_steps_canonical = 3000
+n_steps = 5000000
+# run canonical ensemble for the first n_steps_canonical steps, and then NPT ensemble
+steps_def = [(0,n_steps_canonical,'part only'),(n_steps_canonical,n_steps,'both')]
+
+## Uncomment if in a Jupyter notebook
+# prog_bar = widgets.IntProgress(
+#     value=0,
+#     min=0,
+#     max=n_steps,
+#     step=1,
+#     description='Calculating:',
+#     bar_style='', # 'success', 'info', 'warning', 'danger' or ''
+#     orientation='horizontal'
+# )
+# display(prog_bar)
 
 
-n_dims = 3
-box_size = np.array([8,8,8])
-min_size = np.array([6.5,6.5,6.5])
+# how often to check acceptance rate:
+accept_check_steps = 200
 
-n_parts = int(density * np.prod(box_size))
-V = np.product(box_size)
+# when and what to output 
+output_steps = np.arange(0, n_steps, 5000)
+n_output_steps = len(output_steps)
 
-# r_out = np.zeros([n_parts, n_dims, n_frames])
-
-
-global sr_12, sr12_new, sr_6, sr_6_new    # (sigma/r)^n
+output_dict = {
+    'E': np.zeros(n_output_steps),
+    'P': np.zeros(n_output_steps),
+    'density': np.zeros(n_output_steps),
+    'Box Length': np.zeros(n_output_steps),
+    'r': np.zeros([n_parts, n_dims, n_output_steps]),
+    'Vol Accept': np.zeros(n_output_steps),
+    'Part Accept': np.zeros(n_output_steps)
+}
 
 
 def lennard_jones(r, u, w, part_moved=None):
@@ -80,7 +114,7 @@ def lennard_jones(r, u, w, part_moved=None):
     return u, w
 
 
-# Create Initial Configuration
+# Create Initial Configuration of particles in box
 
 init_locs = np.random.rand(n_parts, n_dims) * box_size
 min_dists = []
@@ -91,7 +125,8 @@ for i in range(n_parts):
     loop_count = 0
     while continue_looping == True:
         if loop_count > 10000:
-            raise InterruptedError('Loop was interrupted')
+            raise InterruptedError('Loop was interrupted. Too many tries to' +
+                                   f'find a location for particle {i}.')
 
         dr = init_locs[i,:] - init_locs[:i,:]
         dr = dr - np.around(dr / box_size) * box_size   # PBC 
@@ -126,22 +161,14 @@ E_LRC = 8/9 * np.pi * n_parts * density * dist_cutoff ** (-9) - \
                 8/3 * np.pi * n_parts * density * dist_cutoff ** (-3)
 E = np.sum(u) + E_LRC
 
-steps_between = 50
-pf_step = []
-pf_part = []
-pf_vol = []
-pf = np.zeros(steps_between)
+# store pass-fail data in each step so that every accept_check_steps steps, the 
+# pass-fail rate can be checked and delta_rmax and delta_Vmax can be tweaked.
+pf = np.zeros(accept_check_steps)   
 
-vol_delts = []
-P_out = []
-E_out = []
-step_out = []
-
-H = []
-
-box_dim = []
-step_count = 0
-total_step_count = 0
+step_count = 0  # accept step count
+total_step_count = 0 
+out_count = 0
+start_time = time.time
 for step_info in steps_def:
     start = step_info[0]
     stop = step_info[1]
@@ -181,10 +208,10 @@ for step_info in steps_def:
             
             box_size_new = np.copy(box_size) + delta_Vmax * (2 * np.random.rand() - 1)
             
-            #### Box_size too small?
             if (box_size_new < min_size).any():
-                n_steps -= 1
-                continue
+#                 raise ValueError(f'Box size is too small: {box_size}')
+                box_size_new = np.copy(min_size)
+                
             
             V_new = np.product(box_size_new)
             density_new = n_parts / V_new
@@ -193,8 +220,8 @@ for step_info in steps_def:
             new_locs = np.copy(part_locs) * box_size_new / box_size
 
             # calculate new potential and virial for all particles
-            sr12_new = np.copy(sr_12) * 1 / (box_size_new[0] / box_size[0])
-            sr6_new = np.copy(sr_6) * 1 / (box_size_new[0] / box_size[1])
+            sr12_new = np.copy(sr_12) * 1 / (box_size_new[0] / box_size[0])**12
+            sr6_new = np.copy(sr_6) * 1 / (box_size_new[0] / box_size[1])**6
 
             u_new = (sr12_new - sr6_new) * 4 * epsilon
             w_new = (sr6_new - 2 * sr12_new) * 24 * epsilon 
@@ -209,7 +236,6 @@ for step_info in steps_def:
             delta_u = E_new - E
             
             delta_H = delta_u + P * (V_new - V) - n_parts * (1 / beta) * np.log(V_new / V)
-            H.append(delta_H)
             alpha = np.exp(-beta * delta_H)
 
     
@@ -253,15 +279,8 @@ for step_info in steps_def:
         
 
 
-        step_count += 1
-        if step_count >= steps_between:
-            
-            virial = -np.sum(w) / 3
-            P_inst = density / beta + virial / V + P_LRC
-            P_out.append(P_inst)
-            E_out.append(E)
-            box_dim.append(box_size[0])
-            
+        
+        if step_count >= (accept_check_steps-1):
             
             # calculate the pass-fail rate of particle moves in chunk
             pf_part_chunk = pf[np.where(pf < 2)]
@@ -271,9 +290,6 @@ for step_info in steps_def:
             pf_vol_chunk = pf[np.where(pf > 1)] - 2
             vol_rate = np.sum(pf_vol_chunk)/len(pf_vol_chunk)
             
-            pf_step.append(total_step_count)
-            pf_part.append(part_rate)
-            pf_vol.append(vol_rate)
             
             # Adjust delta_rmax
             if part_rate > target_acceptance_range[1]:
@@ -292,27 +308,66 @@ for step_info in steps_def:
                 delta_Vmax = delta_Vmax_min
             
             step_count = 0
-          
+        else:
+            step_count += 1 
+                  
+        # ouput data if step count is in output_steps
+        if total_step_count in output_steps:
+            if 'E' in output_dict.keys():
+                output_dict['E'][out_count] = E
+            if 'P' in output_dict.keys():
+                virial = -np.sum(w) / 3
+                P_inst = density / beta + virial / V + P_LRC
+                output_dict['P'][out_count] = P_inst
+            if 'density' in output_dict.keys():
+                output_dict['density'][out_count] = density
+            if 'r' in output_dict.keys():
+                output_dict['r'][:,:,out_count] = part_locs
+            if 'Vol Accept' in output_dict.keys():
+                output_dict['Vol Accept'][out_count] = vol_rate
+            if 'Part Accept' in output_dict.keys():
+                output_dict['Part Accept'][out_count] = part_rate
+            if 'Box Length' in output_dict.keys():
+                output_dict['Box Length'][out_count] = box_size[0]
+            out_count += 1
+        
+        if total_step_count == n_steps_canonical:
+            start = time.time()
+                    
+        if total_step_count == n_steps_canonical + 5000:
+            end = time.time()
+            diff = end - start
+            diff = diff / 3600
             
-            
+            est_time = n_steps / (n_steps_canonical + 5000) * diff
+            print(f'Estimated Time: {est_time} hours')
+        
         total_step_count += 1
         
-# if total_step_count > 10:
-#             print(pf)
-#             break
-        
+        ## uncomment if in Jupyter
+        # prog_bar.value = total_step_count
 
+
+for key, value in output_dict.items():
+    np.save(f'run1/{key}.npy',value)
+        
+     
+print('Done')
+
+# ===========================================
+#  Plotting
+# ===========================================
 
 ## Plotting of results
 plt.figure(figsize=[10,7])
 ax_l = plt.subplot(221)
-E_plot = plt.plot(pf_step, E_out, label='Energy')
+E_plot = plt.plot(output_steps, output_dict['E'], label='Energy')
 
 plt.xlabel('Step')
 plt.ylabel('Energy')
 
 ax_r = ax_l.twinx()
-P_plot = plt.plot(pf_step, P_out,'C3', label='Pressure')
+P_plot = plt.plot(output_steps, output_dict['P'],'C3', label='Pressure')
 
 plt.ylabel('Pressure')
 
@@ -324,26 +379,9 @@ ax_l.legend(lns, labs, loc='best', frameon=False)
 
 plt.subplot(222)
 
-# boxcar averaging of acceptance rate
-boxcar_stepsize=10
-sum_part = 0
-sum_vol = 0
-part_box = []
-vol_box = []
-step_box = []
-for i in range(len(pf_part)):
-    sum_part += pf_part[i]
-    sum_vol += pf_vol[i]
-    if i % boxcar_stepsize == 0:
-        part_box.append(sum_part / boxcar_stepsize)
-        vol_box.append(sum_vol / boxcar_stepsize)
-        step_box.append(pf_step[i])
-        
-        sum_part = 0
-        sum_vol = 0
 
-plt.plot(step_box, part_box, 'C0', label='Particle')
-plt.plot(step_box, vol_box, 'C3', label='Volume')
+plt.plot(output_steps, output_dict['Part Accept'], 'C0', label='Particle')
+plt.plot(output_steps, output_dict['Vol Accept'], 'C3', label='Volume')
 
 plt.ylabel('Acceptance Ratio')
 plt.xlabel('Step')
@@ -351,10 +389,110 @@ plt.legend(loc='best',frameon=False)
 
 
 plt.subplot(223)
-plt.plot(pf_step, box_dim)
+plt.plot(output_steps, output_dict['Box Length'])
 plt.ylabel('Box Length')
+plt.xlabel('Step')
+
+plt.subplot(224)
+
+plt.plot(output_steps, output_dict['density'])
+plt.xlabel('Step')
+plt.ylabel('Density')
+
 
 plt.tight_layout()
-plt.savefig('MC2.png',dpi=300)
+# # plt.savefig('MC6.png',dpi=300)
+
 plt.show()   
-print(delta_rmax, delta_Vmax)
+
+# ======================================================
+# Radial Distrubution Function (g(r))
+# ======================================================
+from scipy.interpolate import UnivariateSpline
+# box_size = np.array([8,8,8])
+density = 1.35
+ro = output_dict['r'][:,:,900:]
+n_times = np.shape(ro)[2]
+n_parts = np.shape(ro)[1]
+delta_r = 0.05
+max_r = 4
+# bins_array = np.zeros(max_r / delta_r)
+max_vals = np.arange(0, max_r + delta_r, delta_r)   #doesnt include 4.1
+bins_array = np.zeros(len(max_vals)-1)
+
+for m in range(n_times):
+    rom = ro[:,:,m]
+    for i in range(n_parts-1):
+        r_ij_vect = rom[i,:] - rom[(i+1):,:]   
+        r_ij_vect -= np.around(r_ij_vect / box_size) * box_size   #pbc
+
+        r_ij = np.sqrt(np.sum(r_ij_vect**2, axis=1))   # magnitude (norm) of r_ij_vect
+
+        k = np.floor(r_ij / delta_r)
+
+        for val in k:
+            if val <= (len(bins_array) - 1):
+                bins_array[int(val)] += 2
+
+
+num = bins_array / (n_parts * n_times)
+ 
+i = 0
+g = []
+for val in max_vals:
+
+    if val == max_vals[0]:
+        old_val = val
+        continue
+    
+    
+    h = 4 * np.pi * density / 3  * (val**3 - old_val**3)
+    
+    g.append(num[i] / h)
+    old_val = val
+    i += 1
+    
+# Peak finding
+dist = max_vals[:-1]
+g_spl = UnivariateSpline(dist, g, k=3)
+g_spl.set_smoothing_factor(5)
+
+
+r_arr = np.linspace(dist[0], dist[-1], 1001)
+
+maxima_r = []
+maxima_g = []
+current_max_val = 0
+trending_up = False
+for r_val in r_arr:
+    g_spl_r = g_spl(r_val)
+    if g_spl_r > current_max_val:
+        current_max_val = g_spl_r
+        trending_up = True
+    elif g_spl_r <= current_max_val and trending_up:
+        maxima_r.append(r_val)
+        maxima_g.append(g_spl(r_val))
+        trending_up = False
+    elif g_spl_r < current_max_val:
+        trending_up = False
+        current_max_val= g_spl_r
+
+max_peak = maxima_g.index(max(maxima_g))
+maxima_r = maxima_r[max_peak:]
+maxima_g = maxima_g[max_peak:]
+        
+    
+plt.figure()
+plt.subplot(111)
+plt.plot(dist, g, label='$g(r)$')
+# plt.plot(dist, g_spl(dist), 'k',lw=0.7, label='Spline Fit')
+# plt.plot(maxima_r, maxima_g, 's', c='C3',label='Maxima')
+plt.xlabel('r')
+plt.ylabel('$g(r)$')
+plt.legend(frameon=False)
+plt.savefig('gr-1.png', dpi=300)
+plt.show()
+
+print(list(zip(maxima_r, maxima_g)))
+
+
